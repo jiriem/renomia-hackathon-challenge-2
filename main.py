@@ -381,21 +381,46 @@ def solve(payload: dict):
 You extract structured CRM data from OCR text of Czech insurance contracts.
 
 Business rules:
+- Input: The request contains a "documents" array. Each document may include filename, ocr_text, and optional pdf_url.
+- Handle a single document, multiple documents, and documents without amendments.
+- Document type detection: base contract contains the phrase "POJISTNÁ SMLOUVA"; amendment contains "DODATEK".
 - Process all documents together as one contract file.
 - A main contract may be followed by zero or more amendments/addenda.
 - Amendments override earlier values from the main contract or earlier amendments.
 - Prefer the value from the highest-numbered amendment when multiple amendments change the same field.
-- Return null when a nullable value is not explicitly supported by the documents.
-- "doba neurčitá" means endAt must be null.
-- Dates must use DD.MM.YYYY exactly.
+- latestEndorsementNumber should reflect the highest amendment number present in the documents; return null if there is no amendment. Return it as a STRING.
+- Contract identity fields:
+  - contractNumber example pattern: "POJISTNÁ SMLOUVA č. XXXX"
+  - insurerName example pattern: "Pojistitel: XXXX"
+- Dates must use DD.MM.YYYY exactly (zero-padded).
+- If OCR text contains "doba neurčitá", endAt must be null.
+- Installment mapping:
+  - ročně = 1
+  - pololetně = 2
+  - čtvrtletně = 4
+  - měsíčně = 12
+- Insurance period length: extract from phrases like "Pojistné období: X měsíců" and return integer months.
 - premium.currency must be lowercase ISO-style like czk or eur.
 - premium.isCollection is true only if the documents explicitly state the broker collects the premium; otherwise return false.
 - noticePeriod must be a lowercase hyphenated duration string, not natural language.
 - Examples for noticePeriod: "six-weeks", "two-months", "one-month", "eight-weeks".
+- Contract termination behavior: if text indicates automatic renewal (e.g., "Po uplynutí pojistného období se smlouva automaticky prodlužuje"),
+  set actionOnInsurancePeriodTermination to "auto-renewal".
+- Default constant fields (always return these exact values):
+  - state = "accepted"
+  - assetType = "other"
+  - concludedAs = "broker"
+  - contractRegime = "individual"
+- Optional fields that may be missing must be null (never empty string):
+  - regPlate, note, annualPremiumTotal, liabilityLimitHealth, liabilityLimitProperty, insuranceScope
+- Null handling rules: use null instead of empty strings, 0, or placeholders like "unknown".
+- Common scoring failure avoidance:
+  - Do not use uppercase currency values.
+  - Do not return dates in other formats.
+  - Do not return latestEndorsementNumber as a number.
 - Use only the allowed enum values from the schema.
-- latestEndorsementNumber should reflect the highest amendment number present in the documents; return null if there is no amendment.
-- For Renomia-style contracts, if the document supports the broker interpretation, use concludedAs="broker".
 - Do not invent values.
+- Output must include ALL fields from the schema with correct types.
 
 Document bundle:
 {json.dumps(structured_documents, ensure_ascii=False)}
